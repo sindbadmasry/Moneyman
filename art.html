@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>نظام إدارة الإيرادات والمصروفات</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Cairo', 'sans-serif'] },
+                    colors: { primary: '#2563eb', primaryDark: '#1e40af', secondary: '#10b981', danger: '#f43f5e', dark: '#0f172a', surface: '#ffffff' }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* الأساسيات وتهيئة الشاشة لتمنع التداخل */
+        body { font-family: 'Cairo', sans-serif; background-color: #e2e8f0; margin: 0; padding: 0; height: 100vh; overflow: hidden; overscroll-behavior-y: none; }
+        .app-container { max-width: 480px; margin: 0 auto; background: #f8fafc; height: 100dvh; display: flex; flex-direction: column; box-shadow: 0 0 40px rgba(0,0,0,0.1); position: relative; }
+        
+        /* المحتوى القابل للتمرير يأخذ المساحة المتبقية فقط */
+        .scrollable-content { flex: 1; overflow-y: auto; padding-bottom: 20px; scroll-behavior: smooth; }
+        .scrollable-content::-webkit-scrollbar { width: 0px; }
+        
+        /* شريط التنقل السفلي الثابت */
+        .bottom-nav { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-top: 1px solid #e2e8f0; display: flex; justify-content: space-around; padding: 12px 0 16px 0; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.03); flex-shrink: 0; z-index: 40; }
+        .nav-item { display: flex; flex-direction: column; align-items: center; color: #94a3b8; cursor: pointer; font-size: 0.75rem; transition: all 0.3s; width: 33.33%; font-weight: 600; }
+        .nav-item i { font-size: 1.35rem; margin-bottom: 4px; transition: transform 0.3s; }
+        .nav-item.active { color: #2563eb; }
+        .nav-item.active i { transform: translateY(-4px); text-shadow: 0 4px 8px rgba(37, 99, 235, 0.3); }
+
+        /* النوافذ المنبثقة (Modals) */
+        .modal-overlay { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.4); z-index: 60; display: flex; justify-content: center; align-items: flex-end; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; backdrop-filter: blur(4px); }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal-content { background: white; width: 100%; max-height: 90%; border-radius: 24px 24px 0 0; padding: 1.5rem; overflow-y: auto; transform: translateY(100%); transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 -10px 40px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
+        .modal-overlay.active .modal-content { transform: translateY(0); }
+        .modal-handle { width: 40px; height: 5px; background: #cbd5e1; border-radius: 10px; margin: -10px auto 20px auto; flex-shrink: 0; }
+
+        /* تحميل وإشعارات */
+        #global-loader { position: absolute; inset: 0; background: rgba(255,255,255,0.8); z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; backdrop-filter: blur(5px); opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+        #global-loader.active { opacity: 1; pointer-events: auto; }
+        .spinner { border: 4px solid #e2e8f0; border-top: 4px solid #2563eb; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .toast { position: absolute; top: 20px; left: 50%; transform: translateX(-50%) translateY(-20px); background: #1e293b; color: white; padding: 12px 24px; border-radius: 100px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 110; opacity: 0; transition: all 0.4s; pointer-events: none; font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .toast.success { background: #10b981; }
+        .toast.error { background: #ef4444; }
+
+        .input-modern { width: 100%; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 16px; font-size: 0.95rem; transition: all 0.2s; }
+        .input-modern:focus { outline: none; border-color: #2563eb; background: white; box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1); }
+        .glass-card { background: rgba(255, 255, 255, 0.95); border: 1px solid rgba(255, 255, 255, 0.6); box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05); border-radius: 20px; }
+        
+        .rep-tab { white-space: nowrap; padding: 8px 16px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; background: white; border: 1px solid #e2e8f0; color: #64748b; transition: all 0.2s; }
+        .rep-tab.active { background: #2563eb; color: white; border-color: #2563eb; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    
+    <div id="global-loader"><div class="spinner mb-3"></div><p class="text-primary font-bold animate-pulse">جاري الاتصال...</p></div>
+    <div id="toast" class="toast"><i class="fa-solid fa-circle-check"></i> <span id="toast-msg">تم بنجاح</span></div>
+
+    <div id="login-view" class="flex flex-col justify-center h-full p-8 bg-surface z-50 absolute inset-0">
+        <div class="text-center mb-10">
+            <div class="w-24 h-24 bg-gradient-to-tr from-primary to-blue-400 text-white rounded-3xl flex items-center justify-center text-5xl mx-auto mb-6 transform rotate-3"><i class="fa-solid fa-wallet -rotate-3"></i></div>
+            <h1 class="text-3xl font-black text-dark tracking-tight">نظام المالية</h1>
+        </div>
+        <form id="login-form" class="space-y-5" onsubmit="event.preventDefault(); app.login();">
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-2">اسم المستخدم</label>
+                <input type="text" id="login-username" class="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:outline-none focus:border-primary focus:ring-2 focus:ring-blue-100 font-semibold" required>
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-slate-700 mb-2">كلمة المرور</label>
+                <input type="password" id="login-password" class="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:outline-none focus:border-primary focus:ring-2 focus:ring-blue-100 font-semibold" required>
+            </div>
+            <button type="submit" class="w-full bg-primary text-white font-bold py-4 rounded-xl shadow-lg mt-6 text-lg flex justify-center items-center gap-2">تسجيل الدخول <i class="fa-solid fa-arrow-right-to-bracket"></i></button>
+        </form>
+    </div>
+
+    <div id="main-view" class="hidden flex-col h-full w-full bg-slate-50 relative">
+        
+        <header class="bg-white px-5 py-4 shadow-sm z-10 flex justify-between items-center rounded-b-3xl mb-2 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-blue-50 text-primary rounded-2xl flex items-center justify-center text-xl"><i class="fa-solid fa-user-tie"></i></div>
+                <div>
+                    <h2 class="text-sm font-black text-slate-800" id="header-username">الاسم</h2>
+                    <span class="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full" id="header-role">الدور</span>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="app.fetchData(true)" class="w-10 h-10 rounded-full bg-slate-50 text-slate-600 flex items-center justify-center hover:bg-slate-100 border border-slate-200"><i class="fa-solid fa-rotate-right"></i></button>
+                <button onclick="app.logout()" class="w-10 h-10 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100 border border-rose-200"><i class="fa-solid fa-power-off"></i></button>
+            </div>
+        </header>
+
+        <div class="scrollable-content px-4" id="content-area">
+            
+            <div id="tab-home" class="tab-content block">
+                <div class="flex bg-slate-200/70 p-1 rounded-2xl mb-4 shadow-inner">
+                    <button onclick="app.switchHomeMode('revenue')" id="btn-mode-revenue" class="flex-1 py-3 rounded-xl font-black bg-white text-secondary shadow text-sm transition-all flex justify-center items-center gap-2"><i class="fa-solid fa-arrow-down"></i> تسجيل إيراد</button>
+                    <button onclick="app.switchHomeMode('expense')" id="btn-mode-expense" class="flex-1 py-3 rounded-xl font-bold text-slate-500 text-sm transition-all flex justify-center items-center gap-2"><i class="fa-solid fa-arrow-up"></i> تسجيل مصروف</button>
+                </div>
+
+                <div class="glass-card p-5">
+                    <h3 class="font-black text-lg text-slate-800 mb-4" id="form-title">إضافة إيراد جديد</h3>
+                    <form id="transaction-form" onsubmit="event.preventDefault(); app.saveTransaction();" class="space-y-4">
+                        <div id="field-student">
+                            <label class="block text-xs font-bold text-slate-500 mb-1">اسم الطالب</label>
+                            <input type="text" id="trans-student-search" onkeyup="app.filterStudentsDropdown()" class="input-modern py-2.5 mb-2 text-sm" placeholder="ابحث...">
+                            <select id="trans-student" class="input-modern py-3 font-semibold bg-white" required></select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">البند المحاسبي</label>
+                            <select id="trans-category" class="input-modern py-3 font-semibold bg-white" required></select>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 mb-1">المبلغ (ج.م)</label>
+                                <input type="number" id="trans-amount" class="input-modern py-3 font-black text-lg" required min="1" placeholder="0">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 mb-1">التاريخ</label>
+                                <input type="date" id="trans-date" class="input-modern py-3 font-semibold bg-white" required>
+                            </div>
+                        </div>
+                        <div id="field-method">
+                            <label class="block text-xs font-bold text-slate-500 mb-1">وسيلة الدفع</label>
+                            <select id="trans-method" class="input-modern py-3 font-semibold bg-white">
+                                <option value="نقدي">💵 نقدي</option>
+                                <option value="محفظة إلكترونية">📱 محفظة إلكترونية</option>
+                                <option value="تحويل بنكي">🏦 تحويل بنكي</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">المستلم / المنفذ</label>
+                            <input type="text" id="trans-recipient" class="input-modern py-3 font-semibold" required>
+                        </div>
+                        <button type="submit" id="btn-submit-trans" class="w-full bg-secondary text-white font-black py-4 rounded-xl shadow-lg mt-4 text-lg">تأكيد وحفظ <i class="fa-solid fa-check-circle"></i></button>
+                    </form>
+                </div>
+            </div>
+
+            <div id="tab-reports" class="tab-content hidden space-y-4">
+                
+                <div class="grid grid-cols-2 gap-3 mb-2">
+                    <div class="glass-card p-4 relative overflow-hidden group">
+                        <p class="text-slate-500 text-xs font-bold mb-1">الإيرادات</p>
+                        <h4 class="text-lg font-black text-secondary flex gap-1"><span id="kpi-revenue">0</span> <span class="text-[10px] font-normal">ج.م</span></h4>
+                    </div>
+                    <div class="glass-card p-4 relative overflow-hidden group">
+                        <p class="text-slate-500 text-xs font-bold mb-1">المصروفات</p>
+                        <h4 class="text-lg font-black text-danger flex gap-1"><span id="kpi-expense">0</span> <span class="text-[10px] font-normal">ج.م</span></h4>
+                    </div>
+                    <div class="col-span-2 glass-card p-4 bg-gradient-to-r from-primary to-blue-600 text-white border-none relative">
+                        <p class="text-blue-100 text-sm font-bold mb-1">صافي الأرباح</p>
+                        <h4 class="text-2xl font-black"><span id="kpi-profit">0</span> <span class="text-sm font-normal">ج.م</span></h4>
+                    </div>
+                </div>
+
+                <div class="glass-card p-3 mb-2">
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div><label class="block text-slate-500 text-[10px] font-bold">من تاريخ</label><input type="date" id="filter-from" class="w-full bg-slate-50 border rounded-lg p-1.5" onchange="app.renderCurrentReportView()"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold">إلى تاريخ</label><input type="date" id="filter-to" class="w-full bg-slate-50 border rounded-lg p-1.5" onchange="app.renderCurrentReportView()"></div>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                    <button onclick="app.setReportView('transactions')" id="rv-transactions" class="rep-tab active">سجل الحركات</button>
+                    <button onclick="app.setReportView('students')" id="rv-students" class="rep-tab">موقف الطلاب</button>
+                    <button onclick="app.setReportView('expenses')" id="rv-expenses" class="rep-tab">إجمالي المصروفات</button>
+                    <button onclick="app.setReportView('recipients')" id="rv-recipients" class="rep-tab">إيرادات المستلمين</button>
+                </div>
+
+                <div class="glass-card overflow-hidden">
+                    <div class="p-3 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center" id="report-header-area">
+                        </div>
+                    <div id="reports-list-container" class="divide-y divide-slate-100 px-2 py-1 max-h-80 overflow-y-auto">
+                        </div>
+                </div>
+            </div>
+
+            <div id="tab-settings" class="tab-content hidden space-y-4">
+                <div class="flex bg-slate-200/70 p-1 rounded-xl shadow-inner mb-2 text-sm">
+                    <button onclick="app.switchSettingsTab('students')" class="set-tab-btn active flex-1 py-2.5 rounded-lg font-bold bg-white text-primary" data-target="set-students">الطلاب</button>
+                    <button onclick="app.switchSettingsTab('categories')" class="set-tab-btn flex-1 py-2.5 rounded-lg font-bold text-slate-500" data-target="set-categories">البنود</button>
+                    <button onclick="app.switchSettingsTab('users')" class="set-tab-btn flex-1 py-2.5 rounded-lg font-bold text-slate-500" data-target="set-users">المستخدمين</button>
+                </div>
+
+                <div id="set-students" class="set-content block">
+                    <div class="flex gap-2 mb-4">
+                        <input type="text" id="set-student-search" placeholder="بحث عن طالب..." class="flex-1 input-modern py-2.5 px-3 text-sm" onkeyup="app.renderSettingsStudents()">
+                        <button onclick="app.openStudentAddModal()" class="bg-primary text-white w-11 rounded-xl"><i class="fa-solid fa-plus"></i></button>
+                    </div>
+                    <div id="settings-students-list" class="space-y-3"></div>
+                </div>
+
+                <div id="set-categories" class="set-content hidden space-y-4">
+                    <div class="glass-card p-4">
+                        <h3 class="font-bold text-secondary text-sm mb-3">بنود الإيرادات</h3>
+                        <div class="flex gap-2 mb-3">
+                            <input type="text" id="new-rev-cat" class="flex-1 input-modern px-3 py-2 text-sm">
+                            <button onclick="app.addCategory('revenue')" class="bg-secondary text-white w-10 rounded-xl"><i class="fa-solid fa-plus"></i></button>
+                        </div>
+                        <div id="settings-rev-cat-list" class="flex flex-wrap gap-2"></div>
+                    </div>
+                    <div class="glass-card p-4">
+                        <h3 class="font-bold text-danger text-sm mb-3">بنود المصروفات</h3>
+                        <div class="flex gap-2 mb-3">
+                            <input type="text" id="new-exp-cat" class="flex-1 input-modern px-3 py-2 text-sm">
+                            <button onclick="app.addCategory('expense')" class="bg-danger text-white w-10 rounded-xl"><i class="fa-solid fa-plus"></i></button>
+                        </div>
+                        <div id="settings-exp-cat-list" class="flex flex-wrap gap-2"></div>
+                    </div>
+                </div>
+
+                <div id="set-users" class="set-content hidden">
+                    <div id="admin-only-area" class="hidden">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-slate-800 text-sm">إدارة المستخدمين</h3>
+                            <button onclick="app.openUserModal()" class="bg-dark text-white text-xs px-3 py-2 rounded-lg font-bold"><i class="fa-solid fa-user-plus"></i> إضافة</button>
+                        </div>
+                        <div id="settings-users-list" class="space-y-3"></div>
+                    </div>
+                    <div id="non-admin-area" class="text-center py-10 hidden">
+                        <i class="fa-solid fa-lock text-slate-300 text-4xl mb-3"></i>
+                        <p class="font-bold text-slate-500">لا تملك صلاحيات إدارة المستخدمين</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <nav class="bottom-nav">
+            <div class="nav-item active" onclick="app.switchMainTab('home', this)"><i class="fa-solid fa-house"></i><span>الرئيسية</span></div>
+            <div class="nav-item" onclick="app.switchMainTab('reports', this)"><i class="fa-solid fa-chart-pie"></i><span>التقارير</span></div>
+            <div class="nav-item" onclick="app.switchMainTab('settings', this)"><i class="fa-solid fa-sliders"></i><span>الإعدادات</span></div>
+        </nav>
+    </div>
+</div>
+
+<div id="modal-student" class="modal-overlay" onclick="if(event.target === this) app.closeModal('modal-student')">
+    <div class="modal-content">
+        <div class="modal-handle"></div>
+        <div class="text-center mb-4">
+            <h2 class="text-xl font-black text-slate-800" id="ms-name">الاسم</h2>
+            <p class="text-sm font-bold text-slate-500 mt-1" id="ms-phone"></p>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-4 text-center">
+            <div class="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                <p class="text-[10px] font-bold text-slate-500 mb-1">الاشتراك الشهري</p>
+                <p class="font-black text-slate-800 text-lg" id="ms-sub">0</p>
+            </div>
+            <div class="bg-emerald-50 p-3 rounded-2xl border border-emerald-100">
+                <p class="text-[10px] font-bold text-emerald-600 mb-1">إجمالي المدفوع</p>
+                <p class="font-black text-emerald-700 text-lg" id="ms-paid">0</p>
+            </div>
+        </div>
+        <div class="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 mb-4 relative">
+            <div class="flex justify-between text-sm mb-2 font-bold"><span class="text-slate-700">الشهور المسددة:</span><span id="ms-months-paid" class="text-primary">0</span></div>
+            <div class="flex justify-between text-sm mb-2 font-bold"><span class="text-slate-700">الشهور المستحقة:</span><span id="ms-months-total">0</span></div>
+            <div class="flex justify-between items-center text-sm pt-2 border-t border-blue-200">
+                <span class="font-black text-slate-800">المتأخرات:</span><span class="font-black text-lg" id="ms-arrears" dir="ltr">0</span>
+            </div>
+        </div>
+        <div class="flex-1 overflow-y-auto min-h-[100px] mb-4">
+            <h4 class="font-bold text-sm text-slate-800 mb-2">السجل</h4>
+            <div id="ms-history" class="space-y-2 pr-1"></div>
+        </div>
+        <button onclick="app.closeModal('modal-student')" class="w-full bg-slate-100 text-slate-700 font-bold py-3 rounded-xl mt-auto">إغلاق</button>
+    </div>
+</div>
+
+<div id="modal-details" class="modal-overlay" onclick="if(event.target === this) app.closeModal('modal-details')">
+    <div class="modal-content">
+        <div class="modal-handle"></div>
+        <div class="text-center mb-4">
+            <h2 class="text-xl font-black text-slate-800" id="md-title">العنوان</h2>
+            <p class="text-sm font-bold text-slate-500 mt-1">الإجمالي: <span id="md-total" class="text-lg text-primary font-black">0</span> ج.م</p>
+        </div>
+        <div class="flex-1 overflow-y-auto min-h-[150px] mb-4">
+            <div id="md-history" class="space-y-2 pr-1"></div>
+        </div>
+        <button onclick="app.closeModal('modal-details')" class="w-full bg-slate-100 text-slate-700 font-bold py-3 rounded-xl mt-auto">إغلاق</button>
+    </div>
+</div>
+
+<div id="modal-add-student" class="modal-overlay" onclick="if(event.target === this) app.closeModal('modal-add-student')">
+    <div class="modal-content">
+        <div class="modal-handle"></div>
+        <h2 class="text-xl font-black text-slate-800 mb-5" id="add-st-title">إضافة طالب</h2>
+        <form onsubmit="event.preventDefault(); app.saveStudent();" class="space-y-3">
+            <input type="hidden" id="as-id">
+            <input type="text" id="as-name" class="input-modern" required placeholder="الاسم...">
+            <input type="tel" id="as-phone" class="input-modern" required placeholder="الهاتف...">
+            <div class="grid grid-cols-2 gap-3">
+                <input type="number" id="as-sub" class="input-modern font-bold text-primary" required placeholder="الاشتراك" title="الاشتراك الشهري">
+                <input type="date" id="as-date" class="input-modern" required title="تاريخ البداية">
+            </div>
+            <div class="flex gap-3 mt-4">
+                <button type="submit" class="flex-1 bg-primary text-white font-black py-3 rounded-xl">حفظ</button>
+                <button type="button" onclick="app.closeModal('modal-add-student')" class="flex-1 bg-slate-100 text-slate-700 font-bold py-3 rounded-xl">إلغاء</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="modal-add-user" class="modal-overlay" onclick="if(event.target === this) app.closeModal('modal-add-user')">
+    <div class="modal-content">
+        <div class="modal-handle"></div>
+        <h2 class="text-xl font-black text-slate-800 mb-5" id="add-user-title">بيانات المستخدم</h2>
+        <form onsubmit="event.preventDefault(); app.saveUser();" class="space-y-3">
+            <input type="hidden" id="au-id">
+            <div>
+                <label class="text-xs font-bold text-slate-600 mb-1 block">اسم المستخدم</label>
+                <input type="text" id="au-username" class="input-modern" required>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600 mb-1 block">كلمة المرور</label>
+                <input type="text" id="au-password" class="input-modern" required>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-600 mb-1 block">الصلاحية</label>
+                <select id="au-role" class="input-modern bg-white">
+                    <option value="محاسب">محاسب</option>
+                    <option value="مدير">مدير</option>
+                </select>
+            </div>
+            <div class="flex gap-3 mt-4">
+                <button type="submit" class="flex-1 bg-dark text-white font-black py-3 rounded-xl">حفظ المستخدم</button>
+                <button type="button" onclick="app.closeModal('modal-add-user')" class="flex-1 bg-slate-100 text-slate-700 font-bold py-3 rounded-xl">إلغاء</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    // ضع الرابط الخاص بك هنا
+    const API_URL = "https://script.google.com/macros/s/AKfycbxQwlki7VvGw0ZGOvLcvm0LRMJh2VH0aIwjSkciOKnMyNpAcwyvkP-PSWHTmBeznbA/exec";
+
+    const app = {
+        data: { users: [], students: [], categories: [], transactions: [] },
+        currentUser: null,
+        homeMode: 'revenue',
+        reportView: 'transactions', // transactions, students, expenses, recipients
+
+        async init() {
+            document.getElementById('trans-date').valueAsDate = new Date();
+            const firstDay = new Date(); firstDay.setDate(1);
+            document.getElementById('filter-from').valueAsDate = firstDay;
+            document.getElementById('filter-to').valueAsDate = new Date();
+
+            const loggedIn = localStorage.getItem('erp_user');
+            if(loggedIn) {
+                this.currentUser = JSON.parse(loggedIn);
+                this.showMainApp();
+                await this.fetchData(false);
+            }
+        },
+
+        async apiCall(action, payload = {}) {
+            this.showLoader();
+            try {
+                const response = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action, payload }) });
+                const resData = await response.json();
+                this.hideLoader();
+                if(resData.status === 'success') return resData.data;
+                else throw new Error(resData.message);
+            } catch (error) {
+                this.hideLoader(); this.showToast('خطأ في الاتصال', 'error'); return null;
+            }
+        },
+
+        async fetchData(showMsg = false) {
+            const data = await this.apiCall('GET_ALL_DATA');
+            if(data) {
+                this.data = data;
+                localStorage.setItem('erp_data', JSON.stringify(data));
+                this.refreshUI();
+                if(showMsg) this.showToast('تمت مزامنة البيانات', 'success');
+            } else {
+                const local = localStorage.getItem('erp_data');
+                if(local) { this.data = JSON.parse(local); this.refreshUI(); }
+            }
+        },
+
+        async login() {
+            const u = document.getElementById('login-username').value.trim();
+            const p = document.getElementById('login-password').value;
+            const data = await this.apiCall('GET_ALL_DATA');
+            if(data) {
+                this.data = data;
+                const user = this.data.users.find(x => x.username === u && String(x.password) === p);
+                if(user) {
+                    this.currentUser = user;
+                    localStorage.setItem('erp_user', JSON.stringify(user));
+                    localStorage.setItem('erp_data', JSON.stringify(data));
+                    this.showMainApp();
+                } else this.showToast('بيانات الدخول غير صحيحة', 'error');
+            }
+        },
+
+        logout() {
+            this.currentUser = null; localStorage.removeItem('erp_user');
+            document.getElementById('main-view').classList.add('hidden');
+            document.getElementById('main-view').classList.remove('flex');
+            document.getElementById('login-view').classList.remove('hidden');
+            document.getElementById('login-password').value = '';
+        },
+
+        showMainApp() {
+            document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('main-view').classList.remove('hidden');
+            document.getElementById('main-view').classList.add('flex');
+            
+            document.getElementById('header-username').innerText = this.currentUser.username;
+            document.getElementById('header-role').innerText = this.currentUser.role;
+            document.getElementById('trans-recipient').value = this.currentUser.username;
+            this.refreshUI();
+        },
+
+        refreshUI() {
+            this.switchHomeMode(this.homeMode);
+            this.renderSettingsStudents();
+            this.renderSettingsCategories();
+            this.renderSettingsUsers();
+            this.renderCurrentReportView();
+            this.updateKPIs();
+        },
+
+        switchMainTab(tabId, el) {
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            el.classList.add('active');
+            document.querySelectorAll('.tab-content').forEach(t => { t.classList.remove('block'); t.classList.add('hidden'); });
+            document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+            document.getElementById(`tab-${tabId}`).classList.add('block');
+            if(tabId === 'reports') this.renderCurrentReportView();
+        },
+
+        switchHomeMode(mode) {
+            this.homeMode = mode;
+            const isRev = mode === 'revenue';
+            document.getElementById('btn-mode-revenue').className = isRev ? "flex-1 py-3 rounded-xl font-black bg-white text-secondary shadow text-sm flex justify-center items-center gap-2" : "flex-1 py-3 rounded-xl font-bold text-slate-500 text-sm flex justify-center items-center gap-2";
+            document.getElementById('btn-mode-expense').className = !isRev ? "flex-1 py-3 rounded-xl font-black bg-white text-danger shadow text-sm flex justify-center items-center gap-2" : "flex-1 py-3 rounded-xl font-bold text-slate-500 text-sm flex justify-center items-center gap-2";
+            
+            document.getElementById('form-title').innerText = isRev ? "إضافة إيراد جديد" : "إضافة مصروف جديد";
+            document.getElementById('field-student').style.display = isRev ? "block" : "none";
+            document.getElementById('field-method').style.display = isRev ? "block" : "none";
+            document.getElementById('btn-submit-trans').className = isRev ? "w-full bg-secondary text-white font-black py-4 rounded-xl shadow-lg mt-4 text-lg" : "w-full bg-danger text-white font-black py-4 rounded-xl shadow-lg mt-4 text-lg";
+            document.getElementById('trans-student').required = isRev;
+
+            const catSelect = document.getElementById('trans-category');
+            catSelect.innerHTML = this.data.categories.filter(c => c.type === mode).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            if(isRev) this.filterStudentsDropdown();
+        },
+
+        filterStudentsDropdown() {
+            const search = document.getElementById('trans-student-search').value.toLowerCase();
+            document.getElementById('trans-student').innerHTML = this.data.students
+                .filter(s => s.name.toLowerCase().includes(search))
+                .map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        },
+
+        async saveTransaction() {
+            if(this.currentUser.role === 'محاسب') { this.showToast('لا تملك صلاحيات إضافة', 'error'); return; }
+            const p = {
+                id: Date.now(), type: this.homeMode, categoryId: document.getElementById('trans-category').value,
+                amount: parseFloat(document.getElementById('trans-amount').value),
+                date: document.getElementById('trans-date').value,
+                recipient: document.getElementById('trans-recipient').value,
+                userId: this.currentUser.id
+            };
+            if(this.homeMode === 'revenue') { p.studentId = document.getElementById('trans-student').value; p.method = document.getElementById('trans-method').value; }
+
+            const res = await this.apiCall('SAVE_TRANSACTION', p);
+            if(res) {
+                this.data.transactions.push(p);
+                document.getElementById('transaction-form').reset();
+                document.getElementById('trans-recipient').value = this.currentUser.username;
+                document.getElementById('trans-date').valueAsDate = new Date();
+                this.showToast('تم الحفظ بنجاح', 'success');
+                this.updateKPIs();
+            }
+        },
+
+        updateKPIs() {
+            const from = document.getElementById('filter-from').value;
+            const to = document.getElementById('filter-to').value;
+            let rev = 0, exp = 0;
+            this.data.transactions.forEach(t => {
+                if(t.date >= from && t.date <= to) {
+                    if(t.type === 'revenue') rev += parseFloat(t.amount);
+                    else exp += parseFloat(t.amount);
+                }
+            });
+            document.getElementById('kpi-revenue').innerText = rev.toLocaleString();
+            document.getElementById('kpi-expense').innerText = exp.toLocaleString();
+            document.getElementById('kpi-profit').innerText = (rev - exp).toLocaleString();
+        },
+
+        // --- Reports Engine ---
+        setReportView(view) {
+            this.reportView = view;
+            ['transactions','students','expenses','recipients'].forEach(v => {
+                document.getElementById(`rv-${v}`).className = (v === view) ? "rep-tab active" : "rep-tab";
+            });
+            this.renderCurrentReportView();
+        },
+
+        renderCurrentReportView() {
+            const from = document.getElementById('filter-from').value;
+            const to = document.getElementById('filter-to').value;
+            let filteredTxs = this.data.transactions.filter(t => t.date >= from && t.date <= to);
+            
+            const header = document.getElementById('report-header-area');
+            const container = document.getElementById('reports-list-container');
+            
+            if(this.reportView === 'transactions') {
+                header.innerHTML = `<span class="font-bold text-sm">سجل العمليات</span><span class="text-xs font-bold text-primary">${filteredTxs.length} حركة</span>`;
+                container.innerHTML = filteredTxs.sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => {
+                    const cat = this.data.categories.find(c => c.id == t.categoryId)?.name || '-';
+                    const isRev = t.type === 'revenue';
+                    const st = isRev ? (this.data.students.find(s => s.id == t.studentId)?.name || '') : '';
+                    return `
+                    <div class="py-2 flex justify-between items-center hover:bg-slate-100 cursor-pointer px-2 rounded-lg" onclick="if(${isRev}) app.openStudentModal('${t.studentId}')">
+                        <div>
+                            <p class="text-sm font-bold text-slate-800">${cat} ${st ? ' - '+st : ''}</p>
+                            <p class="text-[10px] text-slate-500">${t.date.substring(0,10)} | ${t.recipient}</p>
+                        </div>
+                        <p class="font-black text-sm ${isRev ? 'text-secondary' : 'text-danger'}" dir="ltr">${isRev?'+':'-'}${parseFloat(t.amount).toLocaleString()}</p>
+                    </div>`;
+                }).join('') || '<p class="text-center text-xs p-4 text-slate-400">لا يوجد بيانات</p>';
+            } 
+            else if(this.reportView === 'students') {
+                // فلتر إضافي للطلاب
+                header.innerHTML = `
+                    <span class="font-bold text-sm">موقف الطلاب</span>
+                    <select id="st-filter" class="text-xs p-1 border rounded bg-white outline-none" onchange="app.renderReportStudentsFiltered(this.value)">
+                        <option value="all">الكل</option>
+                        <option value="paid">مسدد كامل</option>
+                        <option value="debt">عليه متأخرات</option>
+                    </select>
+                `;
+                this.renderReportStudentsFiltered('all', filteredTxs); // Pass filteredTxs based on date
+            }
+            else if(this.reportView === 'expenses') {
+                const expMap = {};
+                filteredTxs.filter(t => t.type === 'expense').forEach(t => {
+                    expMap[t.categoryId] = (expMap[t.categoryId] || 0) + parseFloat(t.amount);
+                });
+                header.innerHTML = `<span class="font-bold text-sm">تصنيف المصروفات</span>`;
+                container.innerHTML = Object.keys(expMap).map(catId => {
+                    const cName = this.data.categories.find(c => c.id == catId)?.name || 'غير معروف';
+                    return `
+                    <div class="py-2 flex justify-between items-center hover:bg-slate-100 cursor-pointer px-2 rounded-lg" onclick="app.openDetailsModal('expense', '${catId}')">
+                        <span class="text-sm font-bold text-slate-800"><i class="fa-solid fa-arrow-up text-danger ml-1"></i> ${cName}</span>
+                        <span class="font-black text-danger text-sm">${expMap[catId].toLocaleString()}</span>
+                    </div>`;
+                }).join('') || '<p class="text-center text-xs p-4 text-slate-400">لا يوجد مصروفات</p>';
+            }
+            else if(this.reportView === 'recipients') {
+                const recMap = {};
+                filteredTxs.filter(t => t.type === 'revenue').forEach(t => {
+                    recMap[t.recipient] = (recMap[t.recipient] || 0) + parseFloat(t.amount);
+                });
+                header.innerHTML = `<span class="font-bold text-sm">المستلمين للإيرادات</span>`;
+                container.innerHTML = Object.keys(recMap).map(rec => `
+                    <div class="py-2 flex justify-between items-center hover:bg-slate-100 cursor-pointer px-2 rounded-lg" onclick="app.openDetailsModal('recipient', '${rec}')">
+                        <span class="text-sm font-bold text-slate-800"><i class="fa-solid fa-user-check text-secondary ml-1"></i> ${rec}</span>
+                        <span class="font-black text-secondary text-sm">${recMap[rec].toLocaleString()}</span>
+                    </div>
+                `).join('') || '<p class="text-center text-xs p-4 text-slate-400">لا يوجد إيرادات</p>';
+            }
+            this.updateKPIs();
+        },
+
+        renderReportStudentsFiltered(filterVal, txsToUse = null) {
+            // نستخدم جميع الإيرادات للطالب لحساب إجمالي موقفه، وليس المربوط بالتاريخ فقط.
+            const allRevs = this.data.transactions.filter(t => t.type === 'revenue');
+            let html = [];
+            
+            this.data.students.forEach(st => {
+                const stTxs = allRevs.filter(t => t.studentId == st.id);
+                const totalPaid = stTxs.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+                
+                const start = new Date(st.start_date);
+                const now = new Date();
+                let months = (now.getFullYear() - start.getFullYear()) * 12 - start.getMonth() + now.getMonth();
+                months = months <= 0 ? 1 : months + 1;
+                const reqAmt = months * parseFloat(st.subscription);
+                const arrears = reqAmt - totalPaid;
+                
+                const isDebt = arrears > 0;
+                
+                if(filterVal === 'paid' && isDebt) return;
+                if(filterVal === 'debt' && !isDebt) return;
+
+                html.push(`
+                    <div class="py-2 flex justify-between items-center hover:bg-slate-100 cursor-pointer px-2 rounded-lg" onclick="app.openStudentModal('${st.id}')">
+                        <div>
+                            <p class="text-sm font-bold text-slate-800">${st.name}</p>
+                            <p class="text-[10px] ${isDebt ? 'text-danger' : 'text-secondary'} font-bold">${isDebt ? 'متبقي: '+arrears : 'مسدد بالكامل'}</p>
+                        </div>
+                        <p class="font-black text-sm text-secondary">${totalPaid.toLocaleString()}</p>
+                    </div>
+                `);
+            });
+            document.getElementById('reports-list-container').innerHTML = html.join('') || '<p class="text-center text-xs p-4 text-slate-400">لا يوجد</p>';
+        },
+
+        openDetailsModal(type, key) {
+            const from = document.getElementById('filter-from').value;
+            const to = document.getElementById('filter-to').value;
+            let title = "", total = 0, txs = [];
+
+            if(type === 'expense') {
+                title = this.data.categories.find(c => c.id == key)?.name || 'مصروف';
+                txs = this.data.transactions.filter(t => t.type === 'expense' && t.categoryId == key && t.date >= from && t.date <= to);
+            } else {
+                title = key; // المستلم
+                txs = this.data.transactions.filter(t => t.type === 'revenue' && t.recipient === key && t.date >= from && t.date <= to);
+            }
+
+            total = txs.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+            
+            document.getElementById('md-title').innerText = title;
+            document.getElementById('md-total').innerText = total.toLocaleString();
+            
+            document.getElementById('md-history').innerHTML = txs.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t => `
+                <div class="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+                    <div>
+                        <p class="text-xs font-bold text-slate-700">${t.date.substring(0,10)}</p>
+                        ${type==='recipient' ? `<p class="text-[10px] text-slate-500">${this.data.students.find(s=>s.id==t.studentId)?.name||''}</p>` : ''}
+                    </div>
+                    <span class="font-black text-sm ${type==='expense'?'text-danger':'text-secondary'}">${parseFloat(t.amount).toLocaleString()}</span>
+                </div>
+            `).join('') || '<div class="text-center text-xs text-slate-400">لا توجد حركات</div>';
+
+            this.openModal('modal-details');
+        },
+
+        // --- Settings / Crud ---
+        switchSettingsTab(tab) {
+            document.querySelectorAll('.set-tab-btn').forEach(btn => { btn.className = "set-tab-btn flex-1 py-2.5 rounded-lg font-bold text-slate-500"; });
+            document.querySelectorAll('.set-content').forEach(c => { c.classList.remove('block'); c.classList.add('hidden'); });
+            document.querySelector(`[data-target="set-${tab}"]`).className = "set-tab-btn active flex-1 py-2.5 rounded-lg font-bold bg-white text-primary";
+            document.getElementById(`set-${tab}`).classList.remove('hidden'); document.getElementById(`set-${tab}`).classList.add('block');
+        },
+
+        // Students CRUD
+        renderSettingsStudents() {
+            const search = document.getElementById('set-student-search').value.toLowerCase();
+            document.getElementById('settings-students-list').innerHTML = this.data.students
+                .filter(s => s.name.toLowerCase().includes(search) || String(s.phone).includes(search))
+                .map(s => `
+                    <div class="glass-card p-3 flex justify-between items-center">
+                        <div class="flex-1 cursor-pointer" onclick="app.openStudentModal('${s.id}')">
+                            <h4 class="font-black text-sm">${s.name}</h4><p class="text-[10px] text-slate-500">${s.phone}</p>
+                        </div>
+                        <div class="flex gap-1">
+                            <button onclick="app.editStudent('${s.id}')" class="text-blue-500 p-2"><i class="fa-solid fa-pen"></i></button>
+                            <button onclick="app.deleteStudent('${s.id}')" class="text-rose-500 p-2"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </div>`).join('');
+        },
+        openStudentAddModal() {
+            document.getElementById('add-st-title').innerText = "إضافة طالب";
+            document.getElementById('as-id').value = ''; document.getElementById('as-name').value = '';
+            document.getElementById('as-phone').value = ''; document.getElementById('as-sub').value = '';
+            document.getElementById('as-date').valueAsDate = new Date();
+            this.openModal('modal-add-student');
+        },
+        editStudent(id) {
+            const st = this.data.students.find(s => s.id == id);
+            if(st) {
+                document.getElementById('add-st-title').innerText = "تعديل طالب";
+                document.getElementById('as-id').value = st.id; document.getElementById('as-name').value = st.name;
+                document.getElementById('as-phone').value = st.phone; document.getElementById('as-sub').value = st.subscription;
+                try { document.getElementById('as-date').value = new Date(st.start_date).toISOString().split('T')[0]; }catch(e){}
+                this.openModal('modal-add-student');
+            }
+        },
+        async saveStudent() {
+            const p = {
+                id: document.getElementById('as-id').value || Date.now(),
+                name: document.getElementById('as-name').value, phone: document.getElementById('as-phone').value,
+                subscription: parseFloat(document.getElementById('as-sub').value), start_date: document.getElementById('as-date').value, status: 'active'
+            };
+            const res = await this.apiCall('SAVE_STUDENT', p);
+            if(res) {
+                const idx = this.data.students.findIndex(x => x.id == p.id);
+                if(idx > -1) this.data.students[idx] = p; else this.data.students.push(p);
+                this.closeModal('modal-add-student'); this.refreshUI(); this.showToast('تم الحفظ', 'success');
+            }
+        },
+        async deleteStudent(id) {
+            if(confirm('تأكيد الحذف؟') && await this.apiCall('DELETE_STUDENT', {id: id})) {
+                this.data.students = this.data.students.filter(s => s.id != id); this.refreshUI(); this.showToast('تم الحذف', 'success');
+            }
+        },
+
+        openStudentModal(studentId) {
+            const st = this.data.students.find(s => s.id == studentId);
+            if(!st) return;
+            document.getElementById('ms-name').innerText = st.name;
+            document.getElementById('ms-phone').innerText = st.phone;
+            document.getElementById('ms-sub').innerText = st.subscription;
+
+            const stTrans = this.data.transactions.filter(t => t.type === 'revenue' && t.studentId == studentId);
+            const totalPaid = stTrans.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+            
+            const start = new Date(st.start_date); const now = new Date();
+            let months = (now.getFullYear() - start.getFullYear()) * 12 - start.getMonth() + now.getMonth();
+            months = months <= 0 ? 1 : months + 1;
+            const subAmt = parseFloat(st.subscription);
+            const arrears = (months * subAmt) - totalPaid;
+
+            document.getElementById('ms-paid').innerText = totalPaid.toLocaleString();
+            document.getElementById('ms-months-paid').innerText = Math.floor(totalPaid/subAmt);
+            document.getElementById('ms-months-total').innerText = months;
+            
+            const elArr = document.getElementById('ms-arrears');
+            elArr.innerText = arrears > 0 ? arrears.toLocaleString() : "لا يوجد";
+            elArr.className = arrears > 0 ? "font-black text-lg text-danger" : "font-black text-lg text-secondary";
+
+            document.getElementById('ms-history').innerHTML = stTrans.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t => `
+                <div class="flex justify-between items-center bg-slate-50 p-2 rounded-lg"><span class="text-xs">${t.date.substring(0,10)}</span><span class="font-black text-secondary text-sm">+${parseFloat(t.amount).toLocaleString()}</span></div>
+            `).join('') || '<p class="text-xs text-center">لا يوجد</p>';
+
+            this.openModal('modal-student');
+        },
+
+        // Categories CRUD
+        renderSettingsCategories() {
+            const r = (t, i, c, b) => document.getElementById(i).innerHTML = this.data.categories.filter(x=>x.type===t).map(x=>`<span class="inline-flex items-center gap-2 ${b} px-3 py-1.5 rounded-full text-xs font-bold ${c}">${x.name} <i class="fa-solid fa-xmark cursor-pointer" onclick="app.deleteCategory('${x.id}')"></i></span>`).join('');
+            r('revenue', 'settings-rev-cat-list', 'text-emerald-700', 'bg-emerald-100');
+            r('expense', 'settings-exp-cat-list', 'text-rose-700', 'bg-rose-100');
+        },
+        async addCategory(type) {
+            const el = document.getElementById(type==='revenue'?'new-rev-cat':'new-exp-cat');
+            if(!el.value.trim()) return;
+            const p = { id: Date.now(), type, name: el.value.trim() };
+            if(await this.apiCall('ADD_CATEGORY', p)) { this.data.categories.push(p); el.value=''; this.refreshUI(); this.showToast('تم الإضافة', 'success'); }
+        },
+        async deleteCategory(id) {
+            if(confirm('تأكيد الحذف؟') && await this.apiCall('DELETE_CATEGORY', {id})) {
+                this.data.categories = this.data.categories.filter(c => c.id != id); this.refreshUI(); this.showToast('تم الحذف', 'success');
+            }
+        },
+
+        // Users Management (Admin Only)
+        renderSettingsUsers() {
+            const isAdmin = this.currentUser && this.currentUser.role === 'مدير';
+            if(isAdmin) {
+                document.getElementById('admin-only-area').classList.remove('hidden');
+                document.getElementById('non-admin-area').classList.add('hidden');
+                document.getElementById('settings-users-list').innerHTML = this.data.users.map(u => `
+                    <div class="glass-card p-3 flex justify-between items-center">
+                        <div>
+                            <h4 class="font-black text-sm text-slate-800">${u.username}</h4>
+                            <span class="text-[10px] bg-slate-100 px-2 rounded">${u.role}</span>
+                        </div>
+                        <div class="flex gap-1">
+                            <button onclick="app.editUser('${u.id}')" class="text-blue-500 p-2"><i class="fa-solid fa-pen"></i></button>
+                            ${u.id != this.currentUser.id ? `<button onclick="app.deleteUser('${u.id}')" class="text-rose-500 p-2"><i class="fa-solid fa-trash"></i></button>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                document.getElementById('admin-only-area').classList.add('hidden');
+                document.getElementById('non-admin-area').classList.remove('hidden');
+            }
+        },
+        openUserModal() {
+            document.getElementById('add-user-title').innerText = "إضافة مستخدم";
+            document.getElementById('au-id').value = '';
+            document.getElementById('au-username').value = '';
+            document.getElementById('au-password').value = '';
+            document.getElementById('au-role').value = 'محاسب';
+            this.openModal('modal-add-user');
+        },
+        editUser(id) {
+            const u = this.data.users.find(x => x.id == id);
+            if(u) {
+                document.getElementById('add-user-title').innerText = "تعديل مستخدم";
+                document.getElementById('au-id').value = u.id;
+                document.getElementById('au-username').value = u.username;
+                document.getElementById('au-password').value = u.password;
+                document.getElementById('au-role').value = u.role;
+                this.openModal('modal-add-user');
+            }
+        },
+        async saveUser() {
+            const p = {
+                id: document.getElementById('au-id').value || Date.now(),
+                username: document.getElementById('au-username').value.trim(),
+                password: document.getElementById('au-password').value.trim(),
+                role: document.getElementById('au-role').value
+            };
+            if(!p.username || !p.password) return;
+            const res = await this.apiCall('SAVE_USER', p);
+            if(res) {
+                const idx = this.data.users.findIndex(x => x.id == p.id);
+                if(idx > -1) this.data.users[idx] = p; else this.data.users.push(p);
+                this.closeModal('modal-add-user'); this.renderSettingsUsers(); this.showToast('تم الحفظ', 'success');
+            }
+        },
+        async deleteUser(id) {
+            if(confirm('هل أنت متأكد من حذف المستخدم؟') && await this.apiCall('DELETE_USER', {id})) {
+                this.data.users = this.data.users.filter(u => u.id != id); this.renderSettingsUsers(); this.showToast('تم الحذف', 'success');
+            }
+        },
+
+        // Helpers
+        showLoader() { document.getElementById('global-loader').classList.add('active'); },
+        hideLoader() { document.getElementById('global-loader').classList.remove('active'); },
+        showToast(msg, type='success') {
+            const t = document.getElementById('toast');
+            t.className = `toast show ${type}`;
+            t.innerHTML = `<i class="fa-solid fa-${type==='success'?'check':'exclamation'}-circle"></i> <span>${msg}</span>`;
+            setTimeout(() => t.classList.remove('show'), 3000);
+        },
+        openModal(id) { document.getElementById(id).classList.add('active'); },
+        closeModal(id) { document.getElementById(id).classList.remove('active'); }
+    };
+
+    window.onload = () => app.init();
+</script>
+</body>
+</html>
